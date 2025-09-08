@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>SAM.gov Results</title>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 24px; }
+    .muted { color: #555; }
+    .wrap { max-width: 940px; }
+    .box { border:1px solid #ccc; border-radius:8px; padding:16px; background:#fafafa; }
+    .card { border:1px solid #ddd; padding:12px; border-radius:8px; margin: 10px 0; background:white; }
+    .empty { padding: 32px; text-align:center; color:#777; border:1px dashed #aaa; border-radius:8px; background:white; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .pill { display:inline-block; padding:2px 8px; border-radius:12px; background:#e9eef6; font-size:12px; }
+    .ok { color: #0a0; }
+    .warn { color: #b80; }
+    .err { color: #a00; }
+    .banner { padding:10px; border-radius:8px; margin-bottom:12px; }
+    .info { background:#eef5ff; border:1px solid #b5cffb; }
+    .error { background:#ffecec; border:1px solid #ffb5b5; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h2>SAM.gov {{ 'Opportunities by NAICS' if search_type=='opps_naics' else 'Entity Search' }}</h2>
+    <div class="muted">Query: <b>{{ query }}</b>
+      {% if demo %}&nbsp; <span class="pill">demo mode</span>{% endif %}
+      {% if live %}&nbsp; <span class="pill">live</span>{% endif %}
+    </div>
+
+    {% if error %}
+      <div class="banner error"><b>API error:</b> {{ error }}</div>
+    {% elif not live %}
+      <div class="banner info">Using demo data. Set <code>DEMO_MODE=false</code> and provide <code>SAM_API_KEY</code> for live results.</div>
+    {% endif %}
+
+    <div id="status" class="muted" style="margin:12px 0;">Preparing auto-screenshot…</div>
+
+    <div id="captureArea" class="box">
+      {% if search_type == 'entity_name' %}
+        {% if not entity_results %}
+          <div class="empty">No matches found</div>
+        {% else %}
+          {% for r in entity_results %}
+            <div class="card">
+              <div><b>{{ r.name }}</b></div>
+              <div>UEI: {{ r.uei or '—' }} | CAGE: {{ r.cage or '—' }}</div>
+              <div>Status: {{ r.status or '—' }}</div>
+              <div>Address: {{ r.address or '—' }}</div>
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% else %}
+        {% if not opportunity_results %}
+          <div class="empty">No opportunities found for NAICS {{ query }}</div>
+        {% else %}
+          <div class="grid">
+            {% for o in opportunity_results %}
+              <div class="card">
+                <div><b>{{ o.title }}</b></div>
+                <div class="muted">{{ o.agency }}</div>
+                <div>Solicitation: <code>{{ o.solicitation }}</code></div>
+                <div>Due: <b>{{ o.response_due }}</b> &nbsp; <span class="pill">{{ o.status }}</span></div>
+                <div>NAICS: {{ o.naics }} &nbsp;|&nbsp; PSC: {{ o.psc }}</div>
+                <div>Set-Aside: {{ o.set_aside }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endif %}
+    </div>
+
+    <div id="links" style="margin-top:12px;"></div>
+  </div>
+
+  <script>
+    async function autoCapture(){
+      const statusEl = document.getElementById('status');
+      try {
+        statusEl.textContent = 'Capturing…';
+        const area = document.getElementById('captureArea');
+        await new Promise(r => setTimeout(r, 300));
+        const canvas = await html2canvas(area, {scale: 2});
+        const dataUrl = canvas.toDataURL('image/png');
+        const form = new FormData();
+        form.append('imageData', dataUrl);
+        form.append('name', "{{ query }}");
+        const res = await fetch('/capture', { method: 'POST', body: form });
+        const json = await res.json();
+        if (!json.ok) { statusEl.innerHTML = '<span class="err">Capture failed</span>'; return; }
+        const links = document.getElementById('links');
+        links.innerHTML = '<a class="ok" href="/download/' + json.filename + '">Download PNG</a> &nbsp;|&nbsp; <a class="warn" href="/files" target="_blank">View /tmp files</a>';
+        statusEl.innerHTML = '<span class="ok">Screenshot saved</span>';
+      } catch (e) {
+        statusEl.innerHTML = '<span class="err">Capture failed: ' + e + '</span>';
+      }
+    }
+    window.addEventListener('load', autoCapture);
+  </script>
+</body>
+</html>
